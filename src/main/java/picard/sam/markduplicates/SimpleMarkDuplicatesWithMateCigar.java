@@ -228,7 +228,7 @@ public class SimpleMarkDuplicatesWithMateCigar extends MarkDuplicates {
         return 0;
     }
 
-    protected CloseableIterator<DuplicateSet> getDuplicateSetIterator(SamHeaderAndIterator headerAndIterator, SAMRecordDuplicateComparator comparator) {
+    protected CloseableIterator<DuplicateSet> getDuplicateSetIterator(final SamHeaderAndIterator headerAndIterator, final SAMRecordDuplicateComparator comparator) {
         return new DuplicateSetIterator(headerAndIterator.iterator,
                     headerAndIterator.header,
                     false,

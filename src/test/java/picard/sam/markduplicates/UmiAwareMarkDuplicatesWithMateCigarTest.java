@@ -76,7 +76,7 @@ public class UmiAwareMarkDuplicatesWithMateCigarTest extends SimpleMarkDuplicate
                 {
                         // Test short UMIs with no allowance for errors
                         Arrays.asList(new String[] {"A", "A", "T", "G", "G", "C", "C", "A"}),
-                        Arrays.asList(new String[] {"A", "A", "T", "G", "G", "C", "C", "A"}), // All UMIs should not get corrected
+                        Arrays.asList(new String[] {"A", "A", "T", "G", "G", "C", "C", "A"}), // No UMIs should get corrected
                         Arrays.asList(new Boolean[] {false, true, false, false, true, false, true, true}), // Only exactly duplicated UMIs will give rise to a new duplicate set
                         0
                 },
@@ -87,10 +87,18 @@ public class UmiAwareMarkDuplicatesWithMateCigarTest extends SimpleMarkDuplicate
                         // UMI even though it only occurs once.  Since all UMIs only occur once, we choose the UMI that
                         // is not marked as duplicate to be the inferred UMI.
                         Arrays.asList(new String[] {"TTGACATCCA", "ATGCCATCGA", "AAGTCACCGT"}),
-                        Arrays.asList(new String[] {"TTGACATCCA", "TTGACATCCA", "TTGACATCCA"}), // All UMIs should get corrected to A
+                        Arrays.asList(new String[] {"TTGACATCCA", "TTGACATCCA", "TTGACATCCA"}), // All UMIs should get corrected to TTGACATCCA
                         Arrays.asList(new Boolean[] {false, true, true}), // All mate pairs should be duplicates except the first
                         4
                 },
+                {
+                        // Test to make sure that if any reads don't have a UMI, we treat things as if there were no
+                        // UMIs at all
+                        Arrays.asList(new String[] {"TTGACATCCA", null, null}),
+                        Arrays.asList(new String[] {null, null, null}), // Since we had missing UMIs, no UMIs should be inferred
+                        Arrays.asList(new Boolean[] {false, true, true}), // All mate pairs should be duplicates except the first
+                        4
+                }
 
         };
     }
@@ -102,10 +110,18 @@ public class UmiAwareMarkDuplicatesWithMateCigarTest extends SimpleMarkDuplicate
                         // The code should not support variable length UMIs, if we observe variable length UMIs
                         // ensure that an exception is thrown.
                         Arrays.asList(new String[] {"AAAA", "A"}),
-                        Arrays.asList(new String[] {"AAAA", "A"}), // All UMIs should get corrected to A
-                        Arrays.asList(new Boolean[] {false, false}), // All mate pairs should be duplicates except the first
+                        Arrays.asList(new String[] {"AAAA", "A"}), //
+                        Arrays.asList(new Boolean[] {false, false}),
                         4
                 },
+                {
+                        // The code should not support variable length UMIs, if we observe variable length UMIs
+                        // ensure that an exception is thrown.
+                        Arrays.asList(new String[] {"T", "GG"}),
+                        Arrays.asList(new String[] {"T", "GG"}), // All UMIs should get corrected to A
+                        Arrays.asList(new Boolean[] {false, false}), // All mate pairs should be duplicates except the first
+                        1
+                }
         };
     }
 
@@ -113,7 +129,7 @@ public class UmiAwareMarkDuplicatesWithMateCigarTest extends SimpleMarkDuplicate
     public void testUmi(List<String> umis, List<String> inferredUmi, final List<Boolean> isDuplicate, final int editDistanceToJoin) {
         UmiAwareMarkDuplicatesWithMateCigarTester tester = getTester();
         tester.addArg("EDIT_DISTANCE_TO_JOIN=" + editDistanceToJoin);
-        tester.addArg("ADD_INFERRED=TRUE");
+        tester.addArg("ADD_INFERRED_UMI=TRUE");
 
         for(int i = 0;i < umis.size();i++) {
             tester.addMatePairWithUmi(umis.get(i), inferredUmi.get(i), isDuplicate.get(i), isDuplicate.get(i));
@@ -127,7 +143,7 @@ public class UmiAwareMarkDuplicatesWithMateCigarTest extends SimpleMarkDuplicate
     public void testBadUmi(List<String> umis, List<String> inferredUmi, final List<Boolean> isDuplicate, final int editDistanceToJoin) {
         UmiAwareMarkDuplicatesWithMateCigarTester tester = getTester();
         tester.addArg("EDIT_DISTANCE_TO_JOIN=" + editDistanceToJoin);
-        tester.addArg("ADD_INFERRED=TRUE");
+        tester.addArg("ADD_INFERRED_UMI=TRUE");
 
         for(int i = 0;i < umis.size();i++) {
             tester.addMatePairWithUmi(umis.get(i), inferredUmi.get(i), isDuplicate.get(i), isDuplicate.get(i));

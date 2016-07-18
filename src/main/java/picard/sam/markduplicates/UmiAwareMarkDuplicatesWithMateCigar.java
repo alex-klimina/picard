@@ -33,15 +33,13 @@ import picard.cmdline.Option;
 import picard.cmdline.programgroups.Alpha;
 
 /**
- * This is a simple tool to mark duplicates using the DuplicateSetIterator, DuplicateSet, and SAMRecordDuplicateComparator.
+ * This is a simple tool to mark duplicates using the UmiAwareDuplicateSetIterator, DuplicateSet, and SAMRecordDuplicateComparator.
  *
- * Users should continue to use MarkDuplicates in general.  The main motivation of this tool was the fact that 
- * MarkDuplicates has many, many, many useful test cases, but few unit tests for validating individual duplicate sets. To
- * test the DuplicateSetIterator, DuplicateSet, and SAMRecordDuplicateComparator, the most expedient method was to write
- * this tool and make sure it behaves similarly to MarkDuplicates.  Not the best, I know, but good enough.  NH 06/25/2015.
+ * It makes use of the UmiAwareDuplicateSetIterator which is a wrapper around the DuplicateSetIterator.  It makes use
+ * of the fact that duplicate sets with UMIs can be broken up into subsets based on information contained in the UMI.
  *
- *
- * See MarkDuplicates for more details.
+ * Users should continue to use MarkDuplicates in general, the main motivation for this tool is to provide a way to
+ * mark duplicates using information from UMIs.
  *
  * @author fleharty
  */
@@ -60,9 +58,16 @@ public class UmiAwareMarkDuplicatesWithMateCigar extends SimpleMarkDuplicatesWit
 
 
     @Option(shortName = "ADD_INFERRED_UMI",
-            doc = "This option adds the inferred UMI to the bam in the RI tag", optional = true)
-    public boolean ADD_INFERRED = false;
+            doc = "This option adds the inferred UMI to the bam in the inferred UMI tag (by default this tag is RI).", optional = true)
+    public boolean ADD_INFERRED_UMI = false;
 
+    @Option(shortName = "UMI_TAG_NAME",
+            doc = "Tag name to use for UMI (default is RX)", optional = true)
+    public String UMI_TAG_NAME = "RX";
+
+    @Option(shortName = "INFERRED_UMI_TAG_NAME",
+            doc = "Tag name to use for inferred UMI (default is RI)", optional = true)
+    public String INFERRED_UMI_TAG_NAME = "RI";
 
     private final Log log = Log.getInstance(UmiAwareMarkDuplicatesWithMateCigar.class);
 
@@ -72,11 +77,11 @@ public class UmiAwareMarkDuplicatesWithMateCigar extends SimpleMarkDuplicatesWit
     }
 
     @Override
-    protected CloseableIterator<DuplicateSet> getDuplicateSetIterator(SamHeaderAndIterator headerAndIterator, SAMRecordDuplicateComparator comparator) {
+    protected CloseableIterator<DuplicateSet> getDuplicateSetIterator(final SamHeaderAndIterator headerAndIterator, final SAMRecordDuplicateComparator comparator) {
         return new UmiAwareDuplicateSetIterator(
                     new DuplicateSetIterator(headerAndIterator.iterator,
                     headerAndIterator.header,
                     false,
-                    comparator), EDIT_DISTANCE_TO_JOIN, ADD_INFERRED);
+                    comparator), EDIT_DISTANCE_TO_JOIN, ADD_INFERRED_UMI, UMI_TAG_NAME, INFERRED_UMI_TAG_NAME);
     }
 }
