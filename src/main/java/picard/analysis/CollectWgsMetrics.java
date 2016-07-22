@@ -52,6 +52,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Computes a number of metrics that are useful for evaluating coverage and performance of whole genome sequencing experiments.
@@ -252,32 +253,43 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
 
 // ===
 
-        final BlockingQueue<List<PairInfoRef>> baskets = new ArrayBlockingQueue<List<PairInfoRef>>(2);
-        final int sizeBasket = 10_000_000;
+        final BlockingQueue<List<PairInfoRef>> baskets = new ArrayBlockingQueue<List<PairInfoRef>>(10);
+        final int sizeBasket = 100;
         List<PairInfoRef> basket = new ArrayList<PairInfoRef>(sizeBasket);
         int pairsCount = 0;
 
-        final ExecutorService service = Executors.newFixedThreadPool(2);
+        AtomicInteger countProcessedTask = new AtomicInteger(0);
+
+        final ExecutorService service = Executors.newFixedThreadPool(4);
         service.execute(new Runnable() {
             @Override
             public void run() {
-                List<PairInfoRef> basket;
-                try {
-                    basket = baskets.take();
-                    for (PairInfoRef pair: basket) {
-                        SamLocusIterator.LocusInfo info = pair.getInfo();
-                        ReferenceSequence ref = pair.getRef();
-                        collector.addInfo(info, ref);
-                        progress.record(info.getSequenceName(), info.getPosition());
+                while (true) {
+                    try {
+                        List<PairInfoRef> basket = baskets.take();
+                        service.execute(new Runnable() {
+                            @Override
+                            public void run() {
+                                for (PairInfoRef pair: basket) {
+                                    SamLocusIterator.LocusInfo info = pair.getInfo();
+                                    ReferenceSequence ref = pair.getRef();
+                                    collector.addInfo(info, ref);
+                                    progress.record(info.getSequenceName(), info.getPosition());
+                                }
+
+                                System.out.println("DEBUG: basket processed: " + countProcessedTask.incrementAndGet());
+                            }
+                        });
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
                     }
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
                 }
 
             }
         });
 
 
+        int basketCount = 0;
         // Loop through all the loci
         while (iterator.hasNext()) {
             final SamLocusIterator.LocusInfo info = iterator.next();
@@ -293,6 +305,8 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             if (pairsCount == sizeBasket) {
                 try {
                     baskets.put(basket);
+                    basketCount++;
+                    System.out.println("DEBUG: transmitted for processing " + basketCount + " basket");
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
