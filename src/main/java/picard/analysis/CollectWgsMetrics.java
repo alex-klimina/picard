@@ -250,11 +250,6 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
 // ===
 
         final BlockingQueue<PairInfoRef> pairs = new ArrayBlockingQueue<>(10);
-//        final int sizeBasket = 1;
-//        List<PairInfoRef> basket = new ArrayList<PairInfoRef>(sizeBasket);
-        int pairsCount = 0;
-
-//        AtomicInteger countProcessedTask = new AtomicInteger(0);
         final Semaphore sem = new Semaphore(8);
 
         final ExecutorService service = Executors.newFixedThreadPool(8);
@@ -272,8 +267,6 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
                                 ReferenceSequence ref = pair.getRef();
                                 collector.addInfo(info, ref);
                                 progress.record(info.getSequenceName(), info.getPosition());
-
-//                                System.out.println("DEBUG: basket processed: " + countProcessedTask.incrementAndGet());
                                 sem.release();
                             }
                         });
@@ -339,10 +332,13 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
         protected final long[] depthHistogramArray;
         private   final long[] baseQHistogramArray;
 
+
         private long basesExcludedByBaseq = 0;
         private long basesExcludedByOverlap = 0;
         private long basesExcludedByCapping = 0;
         protected final int coverageCap;
+
+        private Object lock = new Object();
 
         public WgsMetricsCollector(final int coverageCap) {
             depthHistogramArray = new long[coverageCap + 1];
@@ -357,19 +353,32 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             int pileupSize = 0;
             for (final SamLocusIterator.RecordAndOffset recs : info.getRecordAndPositions()) {
 
-                if (recs.getBaseQuality() < MINIMUM_BASE_QUALITY ||
-                        SequenceUtil.isNoCall(recs.getReadBase()))                  { ++basesExcludedByBaseq;   continue; }
-                if (!readNames.add(recs.getRecord().getReadName()))                 { ++basesExcludedByOverlap; continue; }
+                if (recs.getBaseQuality() < MINIMUM_BASE_QUALITY || SequenceUtil.isNoCall(recs.getReadBase())) {
+                    synchronized (lock) { ++basesExcludedByBaseq; }
+                    continue;
+                }
+                if (!readNames.add(recs.getRecord().getReadName())) {
+                    synchronized (lock) { ++basesExcludedByOverlap; }
+                    continue;
+                }
 
                 pileupSize++;
                 if (pileupSize <= coverageCap) {
-                    baseQHistogramArray[recs.getRecord().getBaseQualities()[recs.getOffset()]]++;
+                    synchronized (lock) {
+                        baseQHistogramArray[recs.getRecord().getBaseQualities()[recs.getOffset()]]++;
+                    }
                 }
             }
 
             final int depth = Math.min(pileupSize, coverageCap);
-            if (depth < pileupSize) basesExcludedByCapping += pileupSize - coverageCap;
-            depthHistogramArray[depth]++;
+            if (depth < pileupSize) {
+                synchronized (lock) {
+                    basesExcludedByCapping += pileupSize - coverageCap;
+                }
+            }
+            synchronized (lock) {
+                depthHistogramArray[depth]++;
+            }
         }
 
         public void addToMetricsFile(final MetricsFile<WgsMetrics, Integer> file,
