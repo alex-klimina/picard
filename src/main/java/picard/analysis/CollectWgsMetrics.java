@@ -32,14 +32,7 @@ import htsjdk.samtools.metrics.MetricBase;
 import htsjdk.samtools.metrics.MetricsFile;
 import htsjdk.samtools.reference.ReferenceSequence;
 import htsjdk.samtools.reference.ReferenceSequenceFileWalker;
-import htsjdk.samtools.util.Histogram;
-import htsjdk.samtools.util.IOUtil;
-import htsjdk.samtools.util.IntervalList;
-import htsjdk.samtools.util.Log;
-import htsjdk.samtools.util.ProgressLogger;
-import htsjdk.samtools.util.QualityUtil;
-import htsjdk.samtools.util.SamLocusIterator;
-import htsjdk.samtools.util.SequenceUtil;
+import htsjdk.samtools.util.*;
 import picard.cmdline.CommandLineProgram;
 import picard.cmdline.CommandLineProgramProperties;
 import picard.cmdline.Option;
@@ -55,7 +48,10 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.stream.IntStream;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Computes a number of metrics that are useful for evaluating coverage and performance of whole genome sequencing experiments.
@@ -204,6 +200,7 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
 
     @Override
     protected int doWork() {
+
         IOUtil.assertFileIsReadable(INPUT);
         IOUtil.assertFileIsWritable(OUTPUT);
         IOUtil.assertFileIsReadable(REFERENCE_SEQUENCE);
@@ -211,11 +208,13 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             IOUtil.assertFileIsReadable(INTERVALS);
         }
 
+
         // it doesn't make sense for the locus accumulation cap to be lower than the coverage cap
         if (LOCUS_ACCUMULATION_CAP < COVERAGE_CAP) {
             log.warn("Setting the LOCUS_ACCUMULATION_CAP to be equal to the COVERAGE_CAP (" + COVERAGE_CAP + ") because it should not be lower");
             LOCUS_ACCUMULATION_CAP = COVERAGE_CAP;
         }
+
 
         // Setup all the inputs
         final ProgressLogger progress = new ProgressLogger(log, 10000000, "Processed", "loci");
@@ -228,6 +227,9 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
         final CountingFilter dupeFilter = new CountingDuplicateFilter();
         final CountingFilter mapqFilter = new CountingMapQFilter(MINIMUM_MAPPING_QUALITY);
         final CountingPairedFilter pairFilter = new CountingPairedFilter();
+
+
+
         // The order in which filters are added matters!
         filters.add(new SecondaryAlignmentFilter()); // Not a counting filter because we never want to count reads twice
         filters.add(mapqFilter);
@@ -248,6 +250,34 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
         final long stopAfter = STOP_AFTER - 1;
         long counter = 0;
 
+// ===
+
+        final BlockingQueue<List<PairInfoRef>> baskets = new ArrayBlockingQueue<List<PairInfoRef>>(2);
+        final int sizeBasket = 10_000_000;
+        List<PairInfoRef> basket = new ArrayList<PairInfoRef>(sizeBasket);
+        int pairsCount = 0;
+
+        final ExecutorService service = Executors.newFixedThreadPool(2);
+        service.execute(new Runnable() {
+            @Override
+            public void run() {
+                List<PairInfoRef> basket;
+                try {
+                    basket = baskets.take();
+                    for (PairInfoRef pair: basket) {
+                        SamLocusIterator.LocusInfo info = pair.getInfo();
+                        ReferenceSequence ref = pair.getRef();
+                        collector.addInfo(info, ref);
+                        progress.record(info.getSequenceName(), info.getPosition());
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+
+            }
+        });
+
+
         // Loop through all the loci
         while (iterator.hasNext()) {
             final SamLocusIterator.LocusInfo info = iterator.next();
@@ -257,19 +287,27 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             final byte base = ref.getBases()[info.getPosition() - 1];
             if (SequenceUtil.isNoCall(base)) continue;
 
-            // add to the collector
-            collector.addInfo(info, ref);
+            basket.add(new PairInfoRef(info, ref));
+            pairsCount++;
 
-            // Record progress and perhaps stop
-            progress.record(info.getSequenceName(), info.getPosition());
+            if (pairsCount == sizeBasket) {
+                try {
+                    baskets.put(basket);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                basket = new ArrayList<PairInfoRef>(sizeBasket);
+                pairsCount = 0;
+            }
+
             if (usingStopAfter && ++counter > stopAfter) break;
         }
 
+// ===
 
         final MetricsFile<WgsMetrics, Integer> out = getMetricsFile();
         collector.addToMetricsFile(out, INCLUDE_BQ_HISTOGRAM, dupeFilter, mapqFilter, pairFilter);
         out.write(OUTPUT);
-
         return 0;
     }
 
@@ -430,6 +468,24 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             metrics.HET_SNP_Q = QualityUtil.getPhredScoreFromErrorProbability((1 - metrics.HET_SNP_SENSITIVITY));
 
             return metrics;
+        }
+    }
+
+    private class PairInfoRef {
+        SamLocusIterator.LocusInfo info;
+        ReferenceSequence ref;
+
+        public PairInfoRef(SamLocusIterator.LocusInfo info, ReferenceSequence ref) {
+            this.info = info;
+            this.ref = ref;
+        }
+
+        public SamLocusIterator.LocusInfo getInfo() {
+            return info;
+        }
+
+        public ReferenceSequence getRef() {
+            return ref;
         }
     }
 }
