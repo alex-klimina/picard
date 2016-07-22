@@ -249,9 +249,9 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
 
 // ===
 
-        final BlockingQueue<List<PairInfoRef>> baskets = new ArrayBlockingQueue<List<PairInfoRef>>(50);
-        final int sizeBasket = 1;
-        List<PairInfoRef> basket = new ArrayList<PairInfoRef>(sizeBasket);
+        final BlockingQueue<PairInfoRef> pairs = new ArrayBlockingQueue<>(10);
+//        final int sizeBasket = 1;
+//        List<PairInfoRef> basket = new ArrayList<PairInfoRef>(sizeBasket);
         int pairsCount = 0;
 
 //        AtomicInteger countProcessedTask = new AtomicInteger(0);
@@ -263,17 +263,16 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             public void run() {
                 while (true) {
                     try {
-                        List<PairInfoRef> basket = baskets.take();
+                        PairInfoRef pair = pairs.take();
                         sem.acquire();
                         service.execute(new Runnable() {
                             @Override
                             public void run() {
-                                for (PairInfoRef pair: basket) {
-                                    SamLocusIterator.LocusInfo info = pair.getInfo();
-                                    ReferenceSequence ref = pair.getRef();
-                                    collector.addInfo(info, ref);
-                                    progress.record(info.getSequenceName(), info.getPosition());
-                                }
+                                SamLocusIterator.LocusInfo info = pair.getInfo();
+                                ReferenceSequence ref = pair.getRef();
+                                collector.addInfo(info, ref);
+                                progress.record(info.getSequenceName(), info.getPosition());
+
 //                                System.out.println("DEBUG: basket processed: " + countProcessedTask.incrementAndGet());
                                 sem.release();
                             }
@@ -282,12 +281,9 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
                         e.printStackTrace();
                     }
                 }
-
             }
         });
 
-
-//        int basketCount = 0;
         // Loop through all the loci
         while (iterator.hasNext()) {
             final SamLocusIterator.LocusInfo info = iterator.next();
@@ -297,19 +293,10 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             final byte base = ref.getBases()[info.getPosition() - 1];
             if (SequenceUtil.isNoCall(base)) continue;
 
-            basket.add(new PairInfoRef(info, ref));
-            pairsCount++;
-
-            if (pairsCount == sizeBasket) {
-                try {
-                    baskets.put(basket);
-//                    basketCount++;
-//                    System.out.println("DEBUG: transmitted for processing " + basketCount + " basket");
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                basket = new ArrayList<PairInfoRef>(sizeBasket);
-                pairsCount = 0;
+            try {
+                pairs.put(new PairInfoRef(info, ref));
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
 
             if (usingStopAfter && ++counter > stopAfter) break;
