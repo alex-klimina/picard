@@ -48,11 +48,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.*;
 
 /**
  * Computes a number of metrics that are useful for evaluating coverage and performance of whole genome sequencing experiments.
@@ -253,20 +249,22 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
 
 // ===
 
-        final BlockingQueue<List<PairInfoRef>> baskets = new ArrayBlockingQueue<List<PairInfoRef>>(10);
-        final int sizeBasket = 100;
+        final BlockingQueue<List<PairInfoRef>> baskets = new ArrayBlockingQueue<List<PairInfoRef>>(50);
+        final int sizeBasket = 1;
         List<PairInfoRef> basket = new ArrayList<PairInfoRef>(sizeBasket);
         int pairsCount = 0;
 
-        AtomicInteger countProcessedTask = new AtomicInteger(0);
+//        AtomicInteger countProcessedTask = new AtomicInteger(0);
+        final Semaphore sem = new Semaphore(8);
 
-        final ExecutorService service = Executors.newFixedThreadPool(4);
+        final ExecutorService service = Executors.newFixedThreadPool(8);
         service.execute(new Runnable() {
             @Override
             public void run() {
                 while (true) {
                     try {
                         List<PairInfoRef> basket = baskets.take();
+                        sem.acquire();
                         service.execute(new Runnable() {
                             @Override
                             public void run() {
@@ -276,8 +274,8 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
                                     collector.addInfo(info, ref);
                                     progress.record(info.getSequenceName(), info.getPosition());
                                 }
-
-                                System.out.println("DEBUG: basket processed: " + countProcessedTask.incrementAndGet());
+//                                System.out.println("DEBUG: basket processed: " + countProcessedTask.incrementAndGet());
+                                sem.release();
                             }
                         });
                     } catch (InterruptedException e) {
@@ -289,7 +287,7 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
         });
 
 
-        int basketCount = 0;
+//        int basketCount = 0;
         // Loop through all the loci
         while (iterator.hasNext()) {
             final SamLocusIterator.LocusInfo info = iterator.next();
@@ -305,8 +303,8 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             if (pairsCount == sizeBasket) {
                 try {
                     baskets.put(basket);
-                    basketCount++;
-                    System.out.println("DEBUG: transmitted for processing " + basketCount + " basket");
+//                    basketCount++;
+//                    System.out.println("DEBUG: transmitted for processing " + basketCount + " basket");
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
