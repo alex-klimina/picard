@@ -248,12 +248,11 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
         long counter = 0;
 
 // ===
-
         final BlockingQueue<PairInfoRef> pairs = new ArrayBlockingQueue<>(10);
         final Semaphore sem = new Semaphore(8);
-
         final ExecutorService service = Executors.newFixedThreadPool(8);
-        service.execute(new Runnable() {
+        final ExecutorService taskStarter = Executors.newSingleThreadExecutor();
+        taskStarter.execute(new Runnable() {
             @Override
             public void run() {
                 while (true) {
