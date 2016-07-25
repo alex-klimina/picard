@@ -247,34 +247,24 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
         final long stopAfter = STOP_AFTER - 1;
         long counter = 0;
 
-// ===
-        final BlockingQueue<PairInfoRef> pairs = new ArrayBlockingQueue<>(10);
-        final Semaphore sem = new Semaphore(8);
         final ExecutorService service = Executors.newFixedThreadPool(8);
-        final ExecutorService taskStarter = Executors.newSingleThreadExecutor();
-        taskStarter.execute(new Runnable() {
+        final Semaphore sem = new Semaphore(8);
+        class DataProcessor implements Runnable {
+            private final ProcessingSet processingSet;
+
+            public DataProcessor(ProcessingSet processingSet) {
+                this.processingSet = processingSet;
+            }
+
             @Override
             public void run() {
-                while (true) {
-                    try {
-                        PairInfoRef pair = pairs.take();
-                        sem.acquire();
-                        service.execute(new Runnable() {
-                            @Override
-                            public void run() {
-                                SamLocusIterator.LocusInfo info = pair.getInfo();
-                                ReferenceSequence ref = pair.getRef();
-                                collector.addInfo(info, ref);
-                                progress.record(info.getSequenceName(), info.getPosition());
-                                sem.release();
-                            }
-                        });
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
+                SamLocusIterator.LocusInfo info = processingSet.getInfo();
+                ReferenceSequence ref = processingSet.getRef();
+                collector.addInfo(info, ref);
+                progress.record(info.getSequenceName(), info.getPosition());
+                sem.release();
             }
-        });
+        }
 
         // Loop through all the loci
         while (iterator.hasNext()) {
@@ -286,7 +276,8 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             if (SequenceUtil.isNoCall(base)) continue;
 
             try {
-                pairs.put(new PairInfoRef(info, ref));
+                sem.acquire();
+                service.execute(new DataProcessor(new ProcessingSet(info, ref)));
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -294,7 +285,6 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             if (usingStopAfter && ++counter > stopAfter) break;
         }
 
-// ===
 
         final MetricsFile<WgsMetrics, Integer> out = getMetricsFile();
         collector.addToMetricsFile(out, INCLUDE_BQ_HISTOGRAM, dupeFilter, mapqFilter, pairFilter);
@@ -478,11 +468,11 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
         }
     }
 
-    private class PairInfoRef {
-        SamLocusIterator.LocusInfo info;
-        ReferenceSequence ref;
+    private class ProcessingSet {
+        private final SamLocusIterator.LocusInfo info;
+        private final ReferenceSequence ref;
 
-        public PairInfoRef(SamLocusIterator.LocusInfo info, ReferenceSequence ref) {
+        public ProcessingSet(SamLocusIterator.LocusInfo info, ReferenceSequence ref) {
             this.info = info;
             this.ref = ref;
         }
