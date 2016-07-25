@@ -33,6 +33,7 @@ import htsjdk.samtools.metrics.MetricsFile;
 import htsjdk.samtools.reference.ReferenceSequence;
 import htsjdk.samtools.reference.ReferenceSequenceFileWalker;
 import htsjdk.samtools.util.*;
+import picard.PicardException;
 import picard.cmdline.CommandLineProgram;
 import picard.cmdline.CommandLineProgramProperties;
 import picard.cmdline.Option;
@@ -247,25 +248,30 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
         final long stopAfter = STOP_AFTER - 1;
         long counter = 0;
 
-        final ExecutorService service = Executors.newFixedThreadPool(8);
-        final Semaphore sem = new Semaphore(8);
+        final int NUMBER_OF_THREAD = 8;
+        final ExecutorService service = Executors.newFixedThreadPool(NUMBER_OF_THREAD);
+        final Semaphore sem = new Semaphore(NUMBER_OF_THREAD);
         class DataProcessor implements Runnable {
-            private final ProcessingSet processingSet;
+            private final List<WgsData> processingSetList;
 
-            public DataProcessor(ProcessingSet processingSet) {
-                this.processingSet = processingSet;
+            public DataProcessor(List<WgsData> processingSetList) {
+                this.processingSetList = new CopyOnWriteArrayList<>(processingSetList);
             }
 
             @Override
             public void run() {
-                SamLocusIterator.LocusInfo info = processingSet.getInfo();
-                ReferenceSequence ref = processingSet.getRef();
-                collector.addInfo(info, ref);
-                progress.record(info.getSequenceName(), info.getPosition());
-                sem.release();
+                for (WgsData set: processingSetList) {
+                    SamLocusIterator.LocusInfo info = set.getInfo();
+                    ReferenceSequence ref = set.getRef();
+                    collector.addInfo(info, ref);
+                    progress.record(info.getSequenceName(), info.getPosition());
+                    sem.release();
+                }
             }
         }
 
+        int sizeWgsDataList = 3;
+        List<WgsData> wgsDataList = new ArrayList<>(sizeWgsDataList);
         // Loop through all the loci
         while (iterator.hasNext()) {
             final SamLocusIterator.LocusInfo info = iterator.next();
@@ -275,21 +281,43 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             final byte base = ref.getBases()[info.getPosition() - 1];
             if (SequenceUtil.isNoCall(base)) continue;
 
-            try {
-                sem.acquire();
-                service.execute(new DataProcessor(new ProcessingSet(info, ref)));
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
+            wgsDataList.add(new WgsData(info, ref));
 
+            if (wgsDataList.size() == sizeWgsDataList){
+                try {
+                    sem.acquire();
+                    service.execute(new DataProcessor(wgsDataList));
+                    wgsDataList = new ArrayList<>(sizeWgsDataList);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
             if (usingStopAfter && ++counter > stopAfter) break;
         }
 
+        try {
+            sem.acquire();
+            service.execute(new DataProcessor(wgsDataList));
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
 
-        final MetricsFile<WgsMetrics, Integer> out = getMetricsFile();
-        collector.addToMetricsFile(out, INCLUDE_BQ_HISTOGRAM, dupeFilter, mapqFilter, pairFilter);
-        out.write(OUTPUT);
+        service.shutdown();
+        boolean isTerminated;
+        try {
+            isTerminated =  service.awaitTermination(12, TimeUnit.HOURS);
+        } catch (InterruptedException e) {
+            throw new PicardException("Thread " + Thread.currentThread() + "is interrupted.", e);
+        }
+        if (isTerminated){
+            final MetricsFile<WgsMetrics, Integer> out = getMetricsFile();
+            collector.addToMetricsFile(out, INCLUDE_BQ_HISTOGRAM, dupeFilter, mapqFilter, pairFilter);
+            out.write(OUTPUT);
+        } else {
+            throw new PicardException("Timeout period for data processing has expired. Execution terminated.");
+        }
         return 0;
+
     }
 
     protected SAMFileHeader getSamFileHeader() {
@@ -468,11 +496,11 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
         }
     }
 
-    private class ProcessingSet {
+    private class WgsData {
         private final SamLocusIterator.LocusInfo info;
         private final ReferenceSequence ref;
 
-        public ProcessingSet(SamLocusIterator.LocusInfo info, ReferenceSequence ref) {
+        public WgsData(SamLocusIterator.LocusInfo info, ReferenceSequence ref) {
             this.info = info;
             this.ref = ref;
         }
