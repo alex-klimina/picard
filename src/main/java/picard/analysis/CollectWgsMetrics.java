@@ -295,7 +295,7 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
                     service.execute(new DataProcessor(wgsDataList));
                     wgsDataList = new ArrayList<>(sizeWgsDataList);
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    throw new PicardException("Thread " + Thread.currentThread() + "is interrupted.", e);
                 }
             }
             if (usingStopAfter && ++counter > stopAfter) break;
@@ -305,7 +305,7 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             sem.acquire();
             service.execute(new DataProcessor(wgsDataList));
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            throw new PicardException("Thread " + Thread.currentThread() + "is interrupted.", e);
         }
 
         service.shutdown();
