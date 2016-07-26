@@ -302,8 +302,10 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
         }
 
         try {
-            sem.acquire();
-            service.execute(new DataProcessor(wgsDataList));
+            if (!wgsDataList.isEmpty()) {
+                sem.acquire();
+                service.execute(new DataProcessor(wgsDataList));
+            }
         } catch (InterruptedException e) {
             throw new PicardException("Thread " + Thread.currentThread() + "is interrupted.", e);
         }
