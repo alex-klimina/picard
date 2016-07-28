@@ -267,16 +267,20 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             @Override
             public void run() {
                 for (WgsData set: processingSetList) {
-                    SamLocusIterator.LocusInfo info = set.getInfo();
-                    ReferenceSequence ref = set.getRef();
-                    collector.addInfo(info, ref);
-                    progress.record(info.getSequenceName(), info.getPosition());
-                    sem.release();
+                    try {
+                        SamLocusIterator.LocusInfo info = set.getInfo();
+                        ReferenceSequence ref = set.getRef();
+                        collector.addInfo(info, ref);
+                        progress.record(info.getSequenceName(), info.getPosition());
+                        sem.release();
+                    } catch (Exception e) {
+                        throw new RuntimeException("Error in thread " + Thread.currentThread(), e);
+                    }
                 }
             }
         }
 
-        int sizeWgsDataList = 3;
+        int sizeWgsDataList = 35;
         List<WgsData> wgsDataList = new ArrayList<>(sizeWgsDataList);
         // Loop through all the loci
         while (iterator.hasNext()) {
