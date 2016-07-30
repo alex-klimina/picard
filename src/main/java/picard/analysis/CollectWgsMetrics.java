@@ -270,16 +270,19 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
 
             @Override
             public void run() {
+                WgsMetricsCollector tempCollector = getCollector(COVERAGE_CAP);
                 for (WgsData set: processingSetList) {
                     try {
                         SamLocusIterator.LocusInfo info = set.getInfo();
                         ReferenceSequence ref = set.getRef();
-                        collector.addInfo(info, ref);
+                        tempCollector.addInfo(info, ref);
+//                        collector.addInfo(info, ref);
                         progress.record(info.getSequenceName(), info.getPosition());
                     } catch (Exception e) {
                         throw new RuntimeException("Error in thread " + Thread.currentThread(), e);
                     }
                 }
+                collector.addInfo(tempCollector);
                 sem.release();
             }
         }
@@ -373,6 +376,20 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             depthHistogramArray = new AtomicLongArray(coverageCap + 1);
             baseQHistogramArray = new AtomicLongArray(Byte.MAX_VALUE);
             this.coverageCap = new AtomicInteger(coverageCap);
+        }
+
+        public void addInfo(WgsMetricsCollector tempCollector) {
+            basesExcludedByBaseq.getAndAdd(tempCollector.basesExcludedByBaseq.get());
+            basesExcludedByOverlap.getAndAdd(tempCollector.basesExcludedByOverlap.get());
+            basesExcludedByCapping.getAndAdd(tempCollector.basesExcludedByCapping.get());
+            sumAtomicLongArray(depthHistogramArray, tempCollector.depthHistogramArray);
+            sumAtomicLongArray(baseQHistogramArray, tempCollector.baseQHistogramArray);
+        }
+
+        private void sumAtomicLongArray(AtomicLongArray array1, AtomicLongArray array2) {
+            for (int i = 0; i < array1.length(); i++) {
+                array1.getAndAdd(i, array2.get(i));
+            }
         }
 
         public void addInfo(final SamLocusIterator.LocusInfo info, final ReferenceSequence ref) {
