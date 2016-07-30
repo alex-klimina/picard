@@ -128,6 +128,10 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
             optional = true, overridable = true)
     public File INTERVALS = null;
 
+    @Option(doc = "Size of batch data for processing in multithreading.",
+            optional = true, overridable = true)
+    public int BATCH_SIZE = 30;
+
     private SAMFileHeader header = null;
 
     private final Log log = Log.getInstance(CollectWgsMetrics.class);
@@ -272,15 +276,15 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
                         ReferenceSequence ref = set.getRef();
                         collector.addInfo(info, ref);
                         progress.record(info.getSequenceName(), info.getPosition());
-                        sem.release();
                     } catch (Exception e) {
                         throw new RuntimeException("Error in thread " + Thread.currentThread(), e);
                     }
                 }
+                sem.release();
             }
         }
 
-        int sizeWgsDataList = 35;
+        int sizeWgsDataList = BATCH_SIZE;
         List<WgsData> wgsDataList = new ArrayList<>(sizeWgsDataList);
         // Loop through all the loci
         while (iterator.hasNext()) {
