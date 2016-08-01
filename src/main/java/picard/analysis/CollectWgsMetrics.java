@@ -253,7 +253,7 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
 
         final int NUMBER_OF_THREAD = 8;
         final ExecutorService service = Executors.newFixedThreadPool(NUMBER_OF_THREAD);
-        final Semaphore sem = new Semaphore(NUMBER_OF_THREAD);
+        final Semaphore sem = new Semaphore(NUMBER_OF_THREAD * 2);
 
         class DataProcessor implements Runnable {
             private final List<WgsData> processingSetList;
