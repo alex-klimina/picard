@@ -159,7 +159,7 @@ public class CollectWgsMetricsWithNonZeroCoverage extends CollectWgsMetrics {
             final Histogram<Integer> depthHistogram = new Histogram<>("coverage", "count");
             // do not include the zero-coverage bin
             for (int i = 1; i < depthHistogramArray.length; ++i) {
-                depthHistogram.increment(i, depthHistogramArray[i]);
+                depthHistogram.increment(i, depthHistogramArray[i].sum());
             }
             return depthHistogram;
         }
