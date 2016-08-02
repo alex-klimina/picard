@@ -370,8 +370,13 @@ static final String USAGE_DETAILS = "<p>This tool collects metrics about the fra
 
         public WgsMetricsCollector(final int coverageCap) {
             depthHistogramArray = new LongAdder[coverageCap + 1];
+            for (int i = 0; i < depthHistogramArray.length; i++) {
+                depthHistogramArray[i] = new LongAdder();
+            }
             baseQHistogramArray = new LongAdder[Byte.MAX_VALUE];
-            this.coverageCap = coverageCap;
+            for (int i = 0; i < baseQHistogramArray.length; i++) {
+                baseQHistogramArray[i] = new LongAdder();
+            }            this.coverageCap = coverageCap;
         }
 
         public void addInfo(final SamLocusIterator.LocusInfo info, final ReferenceSequence ref) {
